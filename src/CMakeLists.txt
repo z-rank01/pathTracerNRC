@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 
 # 
 get_filename_component(PROJNAME ${CMAKE_CURRENT_LIST_DIR} NAME)
-set(PROJNAME "${PROJNAME}_PATHTRACINNG")
+set(PROJNAME "vulkan_path_tracer_${PROJNAME}")
 PROJECT(${PROJNAME})
 
 # project definition for nvpro
