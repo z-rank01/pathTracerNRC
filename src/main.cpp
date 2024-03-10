@@ -19,6 +19,12 @@ int main(int argc, const char** argv)
 	static const uint64_t img_height = 600;
 	static const uint32_t workgroup_width = 16;
 	static const uint32_t workgroup_height = 8;
+	// possible paths of shader and other files
+	const std::string exePath(argv[0], std::string(argv[0]).find_last_of("/\\") + 1);
+	std::vector<std::string> searchPaths = { exePath + PROJECT_RELDIRECTORY,
+											exePath + PROJECT_RELDIRECTORY "..",
+											exePath + PROJECT_RELDIRECTORY "../..",
+											exePath + PROJECT_NAME };
 
 	
 	// ---------------------
@@ -78,11 +84,7 @@ int main(int argc, const char** argv)
 			| VK_MEMORY_PROPERTY_HOST_CACHED_BIT						// VK_MEMORY_PROPERTY_HOST_CACHED_BIT means that the CPU caches this memory.
 			| VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);					// VK_MEMORY_PROPERTY_HOST_COHERENT_BIT means that the CPU side of cache management
 																		// is handled automatically, with potentially slower reads/writes.
-	const std::string exePath(argv[0], std::string(argv[0]).find_last_of("/\\") + 1);
-	std::vector<std::string> searchPaths = {exePath + PROJECT_RELDIRECTORY, 
-											exePath + PROJECT_RELDIRECTORY "..",
-										    exePath + PROJECT_RELDIRECTORY "../..", 
-											exePath + PROJECT_NAME};
+	
 
 	// -------------------
 	// Create Command Pool
@@ -102,6 +104,8 @@ int main(int argc, const char** argv)
 	// ---------------
 	// Create Pipeline
 	// ---------------
+	
+	// shader stage in pipeline
 	VkPipelineShaderStageCreateInfo shaderStageCreateInfo = nvvk::make<VkPipelineShaderStageCreateInfo>();
 	shaderStageCreateInfo.stage		= VK_SHADER_STAGE_COMPUTE_BIT;
 	shaderStageCreateInfo.module	= rayTracerShaderModule;
@@ -151,8 +155,6 @@ int main(int argc, const char** argv)
 
 	// add barrier
 	// -------
-	// we add a pipeline barrier in command buffer to guarantee 
-	// staging buffer's data could be available for CPU after all GPU's operations
 	auto mBarrier = nvvk::make<VkMemoryBarrier>();
 	//mBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;		// Make transfer writes
 	//mBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;				// Readable by the CPU
@@ -199,7 +201,7 @@ int main(int argc, const char** argv)
 	void* data = allocator.map(stgBuffer);
 	// float* fData = reinterpret_cast<float*>(data);
 	// printf("First three element in GPU buffer: %f, %f, %f\n", fData[0], fData[1], fData[2]);
-	stbi_write_hdr("test.hdr", img_width, img_height, 3, reinterpret_cast<float*>(data));
+	stbi_write_hdr("../../scenes/test.hdr", img_width, img_height, 3, reinterpret_cast<float*>(data));
 	allocator.unmap(stgBuffer);
 
 
