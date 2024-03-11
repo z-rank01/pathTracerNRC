@@ -4,6 +4,7 @@
 #include <cassert>
 
 #include <nvh/fileoperations.hpp>           // For nvh::loadfiles
+#include <nvvk/descriptorsets_vk.hpp>		// For nvvk::DescriptorSetContainer
 #include <nvvk/context_vk.hpp>
 #include <nvvk/shaders_vk.hpp>				// For nvvk::createShaderModule
 #include <nvvk/structs_vk.hpp>				// For nvvk::make
@@ -21,7 +22,7 @@ int main(int argc, const char** argv)
 	static const uint32_t workgroup_height = 8;
 	// possible paths of shader and other files
 	const std::string exePath(argv[0], std::string(argv[0]).find_last_of("/\\") + 1);
-	std::vector<std::string> searchPaths = { exePath + PROJECT_RELDIRECTORY,
+	std::vector<std::string> searchPaths = {exePath + PROJECT_RELDIRECTORY,
 											exePath + PROJECT_RELDIRECTORY "..",
 											exePath + PROJECT_RELDIRECTORY "../..",
 											exePath + PROJECT_NAME };
@@ -42,18 +43,18 @@ int main(int argc, const char** argv)
 	auto rqFeature = nvvk::make<VkPhysicalDeviceRayQueryFeaturesKHR>();					// extension 3: ray query (for ray tracing) 
 	ctxInfo.addDeviceExtension(VK_KHR_RAY_QUERY_EXTENSION_NAME, false, &rqFeature);
 	// shader debugPrintf extension (just for shader debug)
-	ctxInfo.addDeviceExtension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME);
-	VkValidationFeaturesEXT      validationInfo = nvvk::make<VkValidationFeaturesEXT>();
-	VkValidationFeatureEnableEXT validationFeatureToEnable = VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT;
-	validationInfo.enabledValidationFeatureCount = 1;
-	validationInfo.pEnabledValidationFeatures = &validationFeatureToEnable;
-	ctxInfo.instanceCreateInfoExt = &validationInfo;
-#ifdef _WIN32
-	_putenv_s("DEBUG_PRINTF_TO_STDOUT", "1");
-#else   // If not _WIN32
-	static char putenvString[] = "DEBUG_PRINTF_TO_STDOUT=1";
-	putenv(putenvString);
-#endif  // _WIN32
+// 	ctxInfo.addDeviceExtension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME);
+//	VkValidationFeaturesEXT      validationInfo = nvvk::make<VkValidationFeaturesEXT>();
+//	VkValidationFeatureEnableEXT validationFeatureToEnable = VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT;
+//	validationInfo.enabledValidationFeatureCount = 1;
+//	validationInfo.pEnabledValidationFeatures = &validationFeatureToEnable;
+//	ctxInfo.instanceCreateInfoExt = &validationInfo;
+//#ifdef _WIN32
+//	_putenv_s("DEBUG_PRINTF_TO_STDOUT", "1");
+//#else   // If not _WIN32
+//	static char putenvString[] = "DEBUG_PRINTF_TO_STDOUT=1";
+//	putenv(putenvString);
+//#endif  // _WIN32
 
 
 	// -------------------------
@@ -62,7 +63,7 @@ int main(int argc, const char** argv)
 	nvvk::Context context;               // Encapsulates device state in a single object
 	context.init(ctxInfo);
 	// vkAllocateCommandBuffers(context, nullptr, nullptr); // Invalid call! To see error message of VK_LAYER_KHRONOS_validation.
-	assert(asFeature.accelerationStructure == VK_TRUE && rqFeature.rayQuery == VK_TRUE); // Device must support acceleration structures and ray queries.
+	// assert(asFeature.accelerationStructure == VK_TRUE && rqFeature.rayQuery == VK_TRUE); // Device must support acceleration structures and ray queries.
 
 
 	// ------------------------
@@ -101,19 +102,79 @@ int main(int argc, const char** argv)
 	VkShaderModule rayTracerShaderModule = nvvk::createShaderModule(context.m_device, 
 																	nvh::loadFile("shaders/raytracer.comp.glsl.spv", true, searchPaths));
 	
+	// -----------------------------------------
+	// Create Descriptor Set bindings and layout
+	// -----------------------------------------
+	VkDescriptorSetLayoutBinding storageBufferBinding0{};
+	storageBufferBinding0.binding			= 0;
+	storageBufferBinding0.descriptorCount	= 1;
+	storageBufferBinding0.descriptorType	= VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	storageBufferBinding0.stageFlags		= VK_SHADER_STAGE_COMPUTE_BIT;
+	
+
+	VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreatInfo = nvvk::make<VkDescriptorSetLayoutCreateInfo>();
+	descriptorSetLayoutCreatInfo.bindingCount	= 1;
+	descriptorSetLayoutCreatInfo.pBindings		= &storageBufferBinding0;
+	VkDescriptorSetLayout descriptorSetLayout;
+	NVVK_CHECK(vkCreateDescriptorSetLayout(context.m_device, &descriptorSetLayoutCreatInfo, nullptr, &descriptorSetLayout));
+
+
+	// ---------------------
+	// Create Descriptor Pool and allocate Sets
+	// ---------------------
+	VkDescriptorPoolSize descriptorPoolSize = nvvk::make<VkDescriptorPoolSize>();
+	descriptorPoolSize.descriptorCount	= 1;
+	descriptorPoolSize.type				= VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+
+	VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = nvvk::make<VkDescriptorPoolCreateInfo>();
+	descriptorPoolCreateInfo.maxSets		= 1;
+	descriptorPoolCreateInfo.poolSizeCount	= 1;
+	descriptorPoolCreateInfo.pPoolSizes		= &descriptorPoolSize;
+	VkDescriptorPool descriptorPool;
+	NVVK_CHECK(vkCreateDescriptorPool(context.m_device, &descriptorPoolCreateInfo, nullptr, &descriptorPool));
+
+	VkDescriptorSetAllocateInfo descriptorSetAllocateInfo = nvvk::make<VkDescriptorSetAllocateInfo>();
+	descriptorSetAllocateInfo.descriptorPool		= descriptorPool;
+	descriptorSetAllocateInfo.descriptorSetCount	= 1;
+	descriptorSetAllocateInfo.pSetLayouts			= &descriptorSetLayout;
+	std::vector<VkDescriptorSet> descriptorsets;
+	descriptorsets.resize(1);
+	NVVK_CHECK(vkAllocateDescriptorSets(context.m_device, &descriptorSetAllocateInfo, descriptorsets.data()));
+
+
+	// ---------------------
+	// Write and update descriptor sets
+	// ---------------------
+	VkDescriptorBufferInfo descriptorBufferInfo{};
+	descriptorBufferInfo.buffer		= stgBuffer.buffer;
+	descriptorBufferInfo.offset		= 0;
+	descriptorBufferInfo.range		= bufferSizeBytes;
+
+	VkWriteDescriptorSet writeDescriptorSet = nvvk::make<VkWriteDescriptorSet>();
+	writeDescriptorSet.descriptorCount	= 1;
+	writeDescriptorSet.descriptorType	= VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	writeDescriptorSet.dstArrayElement	= 0;
+	writeDescriptorSet.dstBinding		= 0;
+	writeDescriptorSet.dstSet			= descriptorsets[0];
+	writeDescriptorSet.pBufferInfo		= &descriptorBufferInfo;
+	vkUpdateDescriptorSets(context.m_device, 1, &writeDescriptorSet, 0, nullptr);
+
+
 	// ---------------
 	// Create Pipeline
 	// ---------------
 	
 	// shader stage in pipeline
-	VkPipelineShaderStageCreateInfo shaderStageCreateInfo = nvvk::make<VkPipelineShaderStageCreateInfo>();
+	VkPipelineShaderStageCreateInfo shaderStageCreateInfo{};
+	shaderStageCreateInfo.sType		= VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	shaderStageCreateInfo.stage		= VK_SHADER_STAGE_COMPUTE_BIT;
 	shaderStageCreateInfo.module	= rayTracerShaderModule;
 	shaderStageCreateInfo.pName		= "main";                      // this define the entry point used in shaders.
-
+	
 	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = nvvk::make<VkPipelineLayoutCreateInfo>();
-	pipelineLayoutCreateInfo.setLayoutCount			= 0;
+	pipelineLayoutCreateInfo.setLayoutCount			= 1;
 	pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
+	pipelineLayoutCreateInfo.pSetLayouts			= &descriptorSetLayout;
 	VkPipelineLayout pipelineLayout;
 	NVVK_CHECK(vkCreatePipelineLayout(context.m_device, &pipelineLayoutCreateInfo, VK_NULL_HANDLE, &pipelineLayout));
 
@@ -127,9 +188,9 @@ int main(int argc, const char** argv)
 	// Allocate Command Buffer
 	// -----------------------
 	auto cmdBufferAllocateInfo = nvvk::make<VkCommandBufferAllocateInfo>();
-	cmdBufferAllocateInfo.commandBufferCount = 1;
-	cmdBufferAllocateInfo.commandPool = cmdPool;
-	cmdBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	cmdBufferAllocateInfo.commandBufferCount	= 1;
+	cmdBufferAllocateInfo.commandPool			= cmdPool;
+	cmdBufferAllocateInfo.level					= VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	VkCommandBuffer cmdBuffer;
 	NVVK_CHECK(vkAllocateCommandBuffers(context.m_device, &cmdBufferAllocateInfo, &cmdBuffer));
 
@@ -150,8 +211,12 @@ int main(int argc, const char** argv)
 
 	// bind compute pipeline
 	vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+	vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1,
+							descriptorsets.data(), 0, nullptr);
 	// use compute shader
-	vkCmdDispatch(cmdBuffer, 1, 1, 1);
+	vkCmdDispatch(cmdBuffer, (uint32_t(img_width) + workgroup_width - 1) / workgroup_width,
+							 (uint32_t(img_height) + workgroup_height - 1) / workgroup_height, 
+							 1);
 
 	// add barrier
 	// -------
@@ -201,13 +266,16 @@ int main(int argc, const char** argv)
 	void* data = allocator.map(stgBuffer);
 	// float* fData = reinterpret_cast<float*>(data);
 	// printf("First three element in GPU buffer: %f, %f, %f\n", fData[0], fData[1], fData[2]);
-	stbi_write_hdr("../../scenes/test.hdr", img_width, img_height, 3, reinterpret_cast<float*>(data));
+	stbi_write_hdr("../../scenes/pixelColor.hdr", img_width, img_height, 3, reinterpret_cast<float*>(data));
 	allocator.unmap(stgBuffer);
 
 
 	// --------
 	// Clean up
 	// --------
+	descriptorsets.clear();
+	vkDestroyDescriptorPool(context.m_device, descriptorPool, nullptr);
+	vkDestroyDescriptorSetLayout(context.m_device, descriptorSetLayout, nullptr);
 	vkDestroyShaderModule(context.m_device, rayTracerShaderModule, nullptr);
 	vkDestroyPipelineLayout(context.m_device, pipelineLayout, nullptr);
 	vkDestroyPipeline(context.m_device, computePipeline, nullptr);

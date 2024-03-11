@@ -3,3 +3,7 @@ build/
 
 # vscode
 .vscode/
+
+# bin/resource
+.bin_x64/
+.downloaded_resources/

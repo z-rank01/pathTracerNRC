@@ -29,6 +29,12 @@ endforeach(GLSL)
 list(APPEND GLSL_SOURCES ${GLSL_HEADER_FILES})
 
 #
+# Source code group
+# this is for VS to create source group in a solution
+source_group("Source Files" FILES ${SOURCE_FILES})
+source_group("Shader Files" FILES ${GLSL_SOURCES})
+
+#
 add_executable(${PROJNAME} ${SOURCE_FILES} ${COMMON_SOURCE_FILES} ${GLSL_SOURCES})
 
 # link nvpro_core library
