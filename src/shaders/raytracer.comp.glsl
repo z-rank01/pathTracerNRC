@@ -1,10 +1,12 @@
 #version 460
+#extension GL_EXT_scalar_block_layout : require
+
 
 layout(local_size_x = 16, local_size_y = 8, local_size_z = 1) in;
 
-layout(binding = 0, set = 0) buffer storageBuffer
+layout(binding = 0, set = 0, scalar) buffer storageBuffer
 {
-	float imageData[];
+	vec3 imageData[];
 };
 
 void main()
@@ -24,7 +26,7 @@ void main()
 	//should be row by row first, then the column
 	uint index = pixel.y * resolution.x + pixel.x;
 
-	imageData[3 * index + 0] = color.r;
-	imageData[3 * index + 1] = color.g;
-	imageData[3 * index + 2] = color.b;
+	imageData[index].x = color.r;
+	imageData[index].y = color.g;
+	imageData[index].z = color.b;
 }
